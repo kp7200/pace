@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -6,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/widgets/app_container.dart';
+import '../../../core/widgets/web_shell.dart';
 import '../controllers/home_controller.dart';
 import '../../weekly/views/weekly_view.dart';
 import '../../history/views/history_view.dart';
@@ -18,6 +20,78 @@ class HomeView extends GetView<HomeController> {
   @override
   Widget build(BuildContext context) {
     final ctrl = controller;
+    final webDesktop = isWebDesktop(context);
+
+    // ── Tab content (shared between web and mobile) ───────────────────────
+    final tabContent = Obx(() {
+      final index = ctrl.currentTabIndex.value;
+      if (index == 0) {
+        return CustomScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverToBoxAdapter(child: _Header(ctrl: ctrl)),
+            SliverToBoxAdapter(child: _TimerHero(ctrl: ctrl)),
+            SliverToBoxAdapter(child: _StatsRow(ctrl: ctrl)),
+            SliverToBoxAdapter(child: _NotesSection(ctrl: ctrl)),
+            SliverToBoxAdapter(
+              child: SizedBox(height: webDesktop ? 100 : 150),
+            ),
+          ],
+        );
+      } else if (index == 1) {
+        return const WeeklyView();
+      } else if (index == 2) {
+        return const HistoryView();
+      } else if (index == 3) {
+        return const SettingsView();
+      }
+      return const SizedBox.shrink();
+    });
+
+    // ── Note input bar ───────────────────────────────────────────────────
+    final noteInputBar = Obx(() => ctrl.currentTabIndex.value == 0
+        ? _NoteInputBar(ctrl: ctrl)
+        : const SizedBox.shrink());
+
+    // ── Web desktop: WebShell handles layout ─────────────────────────────
+    if (webDesktop) {
+      return GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Obx(() => WebShell(
+          navItems: [
+            WebNavItem(
+              icon: Icons.home_rounded,
+              label: 'Home',
+              isActive: ctrl.currentTabIndex.value == 0,
+              onTap: () => ctrl.changeTab(0),
+            ),
+            WebNavItem(
+              icon: Icons.calendar_month_rounded,
+              label: 'Weekly Target',
+              isActive: ctrl.currentTabIndex.value == 1,
+              onTap: () => ctrl.changeTab(1),
+            ),
+            WebNavItem(
+              icon: Icons.format_list_bulleted_rounded,
+              label: 'History',
+              isActive: ctrl.currentTabIndex.value == 2,
+              onTap: () => ctrl.changeTab(2),
+            ),
+            WebNavItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              isActive: ctrl.currentTabIndex.value == 3,
+              onTap: () => ctrl.changeTab(3),
+            ),
+          ],
+          bottomAccessory: noteInputBar,
+          showBottomAccessory: ctrl.currentTabIndex.value == 0 && ctrl.isCheckedIn.value,
+          child: tabContent,
+        )),
+      );
+    }
+
+    // ── Mobile: original layout unchanged ────────────────────────────────
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
@@ -27,34 +101,7 @@ class HomeView extends GetView<HomeController> {
           child: Stack(
             children: [
               // ── Scrollable content ──────────────────────────────────────
-              Positioned.fill(
-                child: Obx(() {
-                  final index = ctrl.currentTabIndex.value;
-                  if (index == 0) {
-                    // TAB 0: HOME
-                    return CustomScrollView(
-                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                      slivers: [
-                        SliverToBoxAdapter(child: _Header(ctrl: ctrl)),
-                        SliverToBoxAdapter(child: _TimerHero(ctrl: ctrl)),
-                        SliverToBoxAdapter(child: _StatsRow(ctrl: ctrl)),
-                        SliverToBoxAdapter(child: _NotesSection(ctrl: ctrl)),
-                        const SliverToBoxAdapter(child: SizedBox(height: 150)),
-                      ],
-                    );
-                  } else if (index == 1) {
-                    // TAB 1: WEEKLY
-                    return const WeeklyView();
-                  } else if (index == 2) {
-                    // TAB 2: HISTORY
-                    return const HistoryView();
-                  } else if (index == 3) {
-                    // TAB 3: SETTINGS
-                    return const SettingsView();
-                  }
-                  return const SizedBox.shrink();
-                }),
-              ),
+              Positioned.fill(child: tabContent),
 
               // ── Bottom UI pinned over the scroll area ────────────────────
               Positioned(
@@ -64,9 +111,7 @@ class HomeView extends GetView<HomeController> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Obx(() => ctrl.currentTabIndex.value == 0
-                        ? _NoteInputBar(ctrl: ctrl)
-                        : const SizedBox.shrink()),
+                    noteInputBar,
                     _BottomNav(ctrl: ctrl),
                   ],
                 ),
