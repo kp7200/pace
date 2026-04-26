@@ -30,6 +30,12 @@ class WorkSession extends HiveObject {
   @HiveField(7)
   final List<Note> notes;
 
+  @HiveField(8)
+  final DateTime? updatedAt;
+
+  @HiveField(9)
+  final bool isSynced;
+
   Duration get actualWorkedDuration {
     final result = totalWorkedDuration - totalBreakDuration;
     return result.isNegative ? Duration.zero : result;
@@ -44,6 +50,8 @@ class WorkSession extends HiveObject {
     this.totalBreakDuration = Duration.zero,
     this.currentBreakStartTime,
     this.notes = const [],
+    this.updatedAt,
+    this.isSynced = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -56,6 +64,8 @@ class WorkSession extends HiveObject {
       'totalBreakDuration': totalBreakDuration.inSeconds,
       'currentBreakStartTime': currentBreakStartTime?.toIso8601String(),
       'notes': notes.map((x) => x.toMap()).toList(),
+      'updatedAt': updatedAt?.toIso8601String(),
+      'isSynced': isSynced,
     };
   }
 
@@ -69,6 +79,8 @@ class WorkSession extends HiveObject {
       totalBreakDuration: Duration(seconds: map['totalBreakDuration'] ?? 0),
       currentBreakStartTime: map['currentBreakStartTime'] != null ? DateTime.parse(map['currentBreakStartTime']) : null,
       notes: List<Note>.from(map['notes']?.map((x) => Note.fromMap(x)) ?? []),
+      updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt']) : null,
+      isSynced: map['isSynced'] ?? false,
     );
   }
 
@@ -85,17 +97,22 @@ class WorkSession extends HiveObject {
     Duration? totalBreakDuration,
     DateTime? currentBreakStartTime,
     bool clearCurrentBreakStartTime = false,
+    bool clearCheckOutTime = false,
     List<Note>? notes,
+    DateTime? updatedAt,
+    bool? isSynced,
   }) {
     return WorkSession(
       date: date ?? this.date,
       checkInTime: checkInTime ?? this.checkInTime,
-      checkOutTime: checkOutTime ?? this.checkOutTime,
+      checkOutTime: clearCheckOutTime ? null : (checkOutTime ?? this.checkOutTime),
       targetHours: targetHours ?? this.targetHours,
       totalWorkedDuration: totalWorkedDuration ?? this.totalWorkedDuration,
       totalBreakDuration: totalBreakDuration ?? this.totalBreakDuration,
       currentBreakStartTime: clearCurrentBreakStartTime ? null : (currentBreakStartTime ?? this.currentBreakStartTime),
       notes: notes ?? this.notes,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isSynced: isSynced ?? this.isSynced,
     );
   }
 }

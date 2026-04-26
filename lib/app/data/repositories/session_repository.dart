@@ -14,8 +14,18 @@ class SessionRepository {
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
 
-  Future<void> saveSession(WorkSession session) async {
-    await _box.put(_dateKey(session.date), session);
+  Future<void> saveSession(WorkSession session, {bool isSyncUpdate = false}) async {
+    final sessionToSave = isSyncUpdate
+        ? session
+        : session.copyWith(
+            updatedAt: DateTime.now(),
+            isSynced: false,
+          );
+    await _box.put(_dateKey(sessionToSave.date), sessionToSave);
+  }
+
+  List<WorkSession> getUnsyncedSessions() {
+    return _box.values.where((s) => !s.isSynced).toList();
   }
 
   WorkSession? getSession(DateTime date) {

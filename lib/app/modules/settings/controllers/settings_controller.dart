@@ -3,7 +3,10 @@ import 'package:get/get.dart';
 import '../../../core/base_controller.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/theme_service.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/sync_service.dart';
 import '../../home/controllers/home_controller.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/repositories/session_repository.dart';
 
 class SettingsController extends BaseController {
@@ -15,6 +18,7 @@ class SettingsController extends BaseController {
   final RxInt targetHours = 8.obs;
   late final Rx<ThemeMode> themeMode;
   final RxBool hapticsEnabled = true.obs;
+  late final RxBool isCloudSyncEnabled;
 
   @override
   void onInit() {
@@ -26,6 +30,7 @@ class SettingsController extends BaseController {
     targetHours.value = _storage.getInt('target_hours') ?? 8;
     themeMode = _themeService.themeMode.obs;
     hapticsEnabled.value = _storage.getBool('haptics_enabled') ?? true;
+    isCloudSyncEnabled = SyncService.to.isCloudSyncEnabled;
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────────
@@ -50,6 +55,10 @@ class SettingsController extends BaseController {
     _storage.setBool('haptics_enabled', value);
   }
 
+  void toggleCloudSync(bool value) {
+    SyncService.to.toggleSync(value);
+  }
+
   Future<void> resetToday() async {
     // We'll use a confirmed action from the View, then:
     await _sessionRepository.clearSession(DateTime.now());
@@ -71,5 +80,40 @@ class SettingsController extends BaseController {
     }
     
     showSuccess('All history has been cleared.');
+  }
+
+  // ─── Profile & Auth ───────────────────────────────────────────────────────
+
+  Future<void> updateProfile(String fullName) async {
+    await handleRequest(() async {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(data: {'full_name': fullName}),
+      );
+      // Update local state in auth service manually or let it refresh.
+      AuthService.to.currentUser.value = Supabase.instance.client.auth.currentUser;
+      showSuccess('Profile updated');
+    });
+  }
+
+  Future<void> updateEmail(String email) async {
+    await handleRequest(() async {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(email: email),
+      );
+      showSuccess('Verification sent to both new and old emails.');
+    });
+  }
+
+  Future<void> logout() async {
+    await handleRequest(() async {
+      await Supabase.instance.client.auth.signOut();
+    });
+  }
+
+  Future<void> deleteAccount() async {
+    await handleRequest(() async {
+      await Supabase.instance.client.rpc('delete_user');
+      await Supabase.instance.client.auth.signOut();
+    });
   }
 }

@@ -5,11 +5,11 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/base_controller.dart';
 import '../../../core/services/storage_service.dart';
-import '../../../data/models/note.dart';
 import '../../../data/models/work_session.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../weekly/controllers/weekly_controller.dart';
 import '../../history/controllers/history_controller.dart';
+import 'notes_controller.dart';
 
 class HomeController extends BaseController {
   // Initialized in onInit after all bindings are resolved
@@ -18,14 +18,8 @@ class HomeController extends BaseController {
 
   // ─── Observable State ─────────────────────────────────────────────────────
   final Rx<WorkSession?> session = Rx<WorkSession?>(null);
-  final RxList<Note> notes = <Note>[].obs;
   final RxBool isCheckedIn = false.obs;
   final RxInt targetHours = 8.obs;
-  final TextEditingController noteInputController = TextEditingController();
-  final FocusNode noteFocusNode = FocusNode();
-  final GlobalKey notesSectionKey = GlobalKey();
-  final RxBool isNoteFocused = false.obs;
-  final RxBool isNoteNotEmpty = false.obs;
   final RxBool isOnBreak = false.obs;
 
   // ─── Navigation State ─────────────────────────────────────────────────────
@@ -67,50 +61,51 @@ class HomeController extends BaseController {
     _sessionRepository = Get.find<SessionRepository>();
     targetHours.value = StorageService.to.getInt('target_hours') ?? 8;
     _restoreSession();
-
-    noteFocusNode.addListener(() {
-      isNoteFocused.value = noteFocusNode.hasFocus;
-      if (noteFocusNode.hasFocus) {
-        // Auto-scroll so the 'Daily Notes' header reaches the top of the screen.
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (notesSectionKey.currentContext != null) {
-            Scrollable.ensureVisible(
-              notesSectionKey.currentContext!,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-            );
-          }
-        });
-      }
-    });
-
-    noteInputController.addListener(() {
-      isNoteNotEmpty.value = noteInputController.text.trim().isNotEmpty;
-    });
   }
 
   @override
   void onClose() {
     _ticker?.cancel();
-    noteInputController.dispose();
-    noteFocusNode.dispose();
     super.onClose();
   }
 
   // ─── Session Recovery (handles app kill/restart) ───────────────────────────
   void _restoreSession() {
     final today = DateTime.now();
+
+    // 1. Day Rollover Fix: Check for zombie sessions from previous days
+    final allSessions = _sessionRepository.getAllSessions();
+    if (allSessions.isNotEmpty) {
+      final newest = allSessions.first;
+      final isNotToday = newest.date.year != today.year || 
+                         newest.date.month != today.month || 
+                         newest.date.day != today.day;
+                         
+      if (isNotToday && newest.checkOutTime == null) {
+        // Auto-checkout the old session to cap it.
+        final targetDuration = Duration(hours: newest.targetHours);
+        final autoCheckoutTime = newest.checkInTime.add(targetDuration);
+        
+        final updatedOldSession = newest.copyWith(
+          checkOutTime: autoCheckoutTime,
+          clearCurrentBreakStartTime: true,
+          totalWorkedDuration: autoCheckoutTime.difference(newest.checkInTime),
+        );
+        _sessionRepository.saveSession(updatedOldSession);
+      }
+    }
+
+    // 2. Load today's session
     final saved = _sessionRepository.getSession(today);
 
     if (saved != null && saved.checkOutTime == null) {
       session.value = saved;
-      notes.assignAll(saved.notes);
+      NotesController.to.setNotes(saved.notes);
       isCheckedIn.value = true;
       _startTicker();
     } else if (saved != null) {
       session.value = saved;
-      notes.assignAll(saved.notes);
+      NotesController.to.setNotes(saved.notes);
       isCheckedIn.value = false;
       _recalculate();
     }
@@ -135,36 +130,32 @@ class HomeController extends BaseController {
     
     if (existingSession != null) {
       // RESUME: Treat the gap between last checkout and now as an implicit break
-      Duration additionalBreak = Duration.zero;
-      if (existingSession.checkOutTime != null) {
-        additionalBreak = now.difference(existingSession.checkOutTime!);
+      final todaySession = _sessionRepository.getSession(now);
+
+      if (todaySession != null) {
+        // Resume existing session for the day (even if checked out, reopen it)
+        final updated = todaySession.copyWith(
+          clearCheckOutTime: true,
+        );
+        session.value = updated;
+        NotesController.to.setNotes(updated.notes);
+        isCheckedIn.value = true;
+        await _sessionRepository.saveSession(updated);
+        _startTicker();
+      } else {
+        // FRESH START
+        final newSession = WorkSession(
+          date: now,
+          checkInTime: now,
+          targetHours: targetHours.value,
+        );
+        session.value = newSession;
+        NotesController.to.clearNotes();
+        isCheckedIn.value = true;
+        await _sessionRepository.saveSession(newSession);
+        _startTicker();
       }
-      
-      final updated = existingSession.copyWith(
-        checkOutTime: null, // Clear checkout to make it active again
-        clearCurrentBreakStartTime: true,
-        totalBreakDuration: existingSession.totalBreakDuration + additionalBreak,
-      );
-      
-      session.value = updated;
-      notes.assignAll(updated.notes);
-      isCheckedIn.value = true;
-      await _sessionRepository.saveSession(updated);
-      _startTicker();
-    } else {
-      // FRESH START
-      final newSession = WorkSession(
-        date: now,
-        checkInTime: now,
-        targetHours: targetHours.value,
-      );
-      session.value = newSession;
-      notes.clear();
-      isCheckedIn.value = true;
-      await _sessionRepository.saveSession(newSession);
-      _startTicker();
-    }
-  }
+    }}
 
   // ─── Check-Out ────────────────────────────────────────────────────────────
   Future<void> checkOut() async {
@@ -179,13 +170,44 @@ class HomeController extends BaseController {
           : session.value!.totalBreakDuration,
       clearCurrentBreakStartTime: true,
       totalWorkedDuration: now.difference(session.value!.checkInTime), // We will subtract breaks when displaying
-      notes: notes.toList(),
+      notes: NotesController.to.notes.toList(),
     );
     session.value = updated;
     isCheckedIn.value = false;
     isOnBreak.value = false;
     await _sessionRepository.saveSession(updated);
     _recalculate();
+
+    Get.snackbar(
+      'Checked Out',
+      'Your session has been saved.',
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(24),
+      backgroundColor: const Color(0xFF141413).withValues(alpha: 0.9),
+      colorText: const Color(0xFFF3F0EE),
+      duration: const Duration(seconds: 5),
+      mainButton: TextButton(
+        onPressed: () {
+          if (Get.isSnackbarOpen) Get.closeCurrentSnackbar();
+          _undoCheckOut();
+        },
+        child: const Text(
+          'UNDO',
+          style: TextStyle(color: Color(0xFF4ADE80), fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _undoCheckOut() async {
+    if (session.value == null) return;
+    final updated = session.value!.copyWith(
+      clearCheckOutTime: true,
+    );
+    session.value = updated;
+    isCheckedIn.value = true;
+    await _sessionRepository.saveSession(updated);
+    _startTicker();
   }
 
   // ─── Break ────────────────────────────────────────────────────────────────
@@ -249,38 +271,19 @@ class HomeController extends BaseController {
     final remaining = targetDuration - elapsed;
     final expectedLogout = s.checkInTime.add(targetDuration).add(totalBreaks); // Add breaks because they push expected exit!
 
-    elapsedDisplay.value = _fmt(elapsed);
-    breakDisplay.value = totalBreaks.inMinutes > 0 ? _fmt(totalBreaks) : '--';
-    remainingDisplay.value = remaining.isNegative
+    final newElapsedDisplay = _fmt(elapsed);
+    final newBreakDisplay = totalBreaks.inMinutes > 0 ? _fmt(totalBreaks) : '--';
+    final newRemainingDisplay = remaining.isNegative
         ? '+${_fmt(remaining.abs())}'
         : _fmt(remaining);
-    expectedLogoutDisplay.value = DateFormat('h:mm a').format(expectedLogout);
-    progressValue.value = (elapsed.inSeconds / targetDuration.inSeconds).clamp(0.0, 1.0);
-  }
+    final newExpectedLogoutDisplay = DateFormat('h:mm a').format(expectedLogout);
+    final newProgressValue = (elapsed.inSeconds / targetDuration.inSeconds).clamp(0.0, 1.0);
 
-  // ─── Notes ────────────────────────────────────────────────────────────────
-  Future<void> addNote() async {
-    final content = noteInputController.text.trim();
-    if (content.isEmpty) return;
-
-    final note = Note(id: _uuid.v4(), timestamp: DateTime.now(), content: content);
-    notes.insert(0, note);
-    noteInputController.clear();
-
-    final updated = session.value?.copyWith(notes: notes.toList());
-    if (updated != null) {
-      session.value = updated;
-      await _sessionRepository.saveSession(updated);
-    }
-  }
-
-  Future<void> deleteNote(String id) async {
-    notes.removeWhere((n) => n.id == id);
-    final updated = session.value?.copyWith(notes: notes.toList());
-    if (updated != null) {
-      session.value = updated;
-      await _sessionRepository.saveSession(updated);
-    }
+    if (elapsedDisplay.value != newElapsedDisplay) elapsedDisplay.value = newElapsedDisplay;
+    if (breakDisplay.value != newBreakDisplay) breakDisplay.value = newBreakDisplay;
+    if (remainingDisplay.value != newRemainingDisplay) remainingDisplay.value = newRemainingDisplay;
+    if (expectedLogoutDisplay.value != newExpectedLogoutDisplay) expectedLogoutDisplay.value = newExpectedLogoutDisplay;
+    if (progressValue.value != newProgressValue) progressValue.value = newProgressValue;
   }
 
   void updateTargetHours(int hours) {
@@ -291,7 +294,7 @@ class HomeController extends BaseController {
   void resetSessionState() {
     _ticker?.cancel();
     session.value = null;
-    notes.clear();
+    NotesController.to.clearNotes();
     isCheckedIn.value = false;
     isOnBreak.value = false;
     elapsedDisplay.value = '--';

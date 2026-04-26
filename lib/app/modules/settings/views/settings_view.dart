@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/widgets/common_container.dart';
 import '../controllers/settings_controller.dart';
 
@@ -22,6 +23,11 @@ class SettingsView extends GetView<SettingsController> {
               children: [
                 const SizedBox(height: AppSizes.s12),
                 
+                // ─── ACCOUNT ─────────────────────────────────────────────
+                _SectionHeader(title: 'ACCOUNT'),
+                _AccountSection(),
+                const SizedBox(height: AppSizes.s32),
+
                 // ─── APPEARANCE ──────────────────────────────────────────
                 _SectionHeader(title: 'APPEARANCE'),
                 _AppearanceSelector(),
@@ -35,6 +41,8 @@ class SettingsView extends GetView<SettingsController> {
                 // ─── PREFERENCES ──────────────────────────────────────────
                 _SectionHeader(title: 'PREFERENCES'),
                 _HapticToggle(),
+                const SizedBox(height: 12),
+                _CloudSyncToggle(),
                 const SizedBox(height: AppSizes.s32),
 
                 // ─── DANGER ZONE ─────────────────────────────────────────
@@ -252,6 +260,41 @@ class _HapticToggle extends GetView<SettingsController> {
   }
 }
 
+class _CloudSyncToggle extends GetView<SettingsController> {
+  @override
+  Widget build(BuildContext context) {
+    return CommonContainer(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.04),
+      radius: AppSizes.containerRadius,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.cloud_sync_rounded, color: Theme.of(context).primaryColor, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Cloud Sync',
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Obx(() => Switch.adaptive(
+            value: controller.isCloudSyncEnabled.value,
+            onChanged: (v) => controller.toggleCloudSync(v),
+            activeTrackColor: Theme.of(context).primaryColor,
+          )),
+        ],
+      ),
+    );
+  }
+}
+
 class _DangerZone extends GetView<SettingsController> {
   @override
   Widget build(BuildContext context) {
@@ -264,63 +307,100 @@ class _DangerZone extends GetView<SettingsController> {
         const SizedBox(height: 12),
         _DangerButton(
           label: 'Clear All History',
-          onTap: () => _confirm(context, 'Clear History?', 'This action cannot be undone. All logs will be deleted.', controller.clearAllHistory),
+          onTap: () => _confirm(context, 'Clear History?', 'This action cannot be undone. All logs will be deleted.', controller.clearAllHistory, requiresTyping: true),
+        ),
+        const SizedBox(height: 12),
+        _DangerButton(
+          label: 'Delete Account',
+          onTap: () => _confirm(context, 'Delete Account?', 'This will permanently delete your account and all data.', controller.deleteAccount, requiresTyping: true),
         ),
       ],
     );
   }
 
-  void _confirm(BuildContext context, String title, String msg, VoidCallback onConfirm) {
+  void _confirm(BuildContext context, String title, String msg, VoidCallback onConfirm, {bool requiresTyping = false}) {
     final bgColor = Theme.of(context).scaffoldBackgroundColor;
     final fgColor = Theme.of(context).primaryColor;
 
     Get.bottomSheet(
-      Container(
-        padding: const EdgeInsets.all(AppSizes.s24),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSizes.containerRadius)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: fgColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 24),
-            Text(title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: fgColor)),
-            const SizedBox(height: 8),
-            Text(msg, textAlign: TextAlign.center, style: TextStyle(color: fgColor.withValues(alpha: 0.5))),
-            const SizedBox(height: 32),
-            Row(
+      StatefulBuilder(
+        builder: (context, setState) {
+          bool canConfirm = !requiresTyping;
+          return Container(
+            padding: EdgeInsets.fromLTRB(AppSizes.s24, AppSizes.s24, AppSizes.s24, MediaQuery.of(context).viewInsets.bottom + AppSizes.s24),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSizes.containerRadius)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Get.back(),
-                    child: Text('Cancel', style: TextStyle(color: fgColor, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Get.back();
-                      onConfirm();
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: fgColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 24),
+                Text(title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: fgColor)),
+                const SizedBox(height: 8),
+                Text(msg, textAlign: TextAlign.center, style: TextStyle(color: fgColor.withValues(alpha: 0.5))),
+                if (requiresTyping) ...[
+                  const SizedBox(height: 20),
+                  TextField(
+                    autofocus: true,
+                    onChanged: (val) {
+                      setState(() {
+                        canConfirm = val.trim().toUpperCase() == 'CONFIRM';
+                      });
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.signalOrange,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.buttonRadius)),
+                    style: TextStyle(color: fgColor),
+                    decoration: InputDecoration(
+                      hintText: 'Type CONFIRM to proceed',
+                      hintStyle: TextStyle(color: fgColor.withValues(alpha: 0.3)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: fgColor.withValues(alpha: 0.1)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: fgColor.withValues(alpha: 0.3)),
+                      ),
                     ),
-                    child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
+                ],
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Get.back(),
+                        child: Text('Cancel', style: TextStyle(color: fgColor, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: canConfirm ? () {
+                          Get.back();
+                          onConfirm();
+                        } : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.signalOrange,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppColors.signalOrange.withValues(alpha: 0.3),
+                          disabledForegroundColor: Colors.white.withValues(alpha: 0.5),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.buttonRadius)),
+                        ),
+                        child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 20),
               ],
             ),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        }
       ),
+      isScrollControlled: true,
     );
   }
 }
@@ -351,6 +431,168 @@ class _DangerButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AccountSection extends GetView<SettingsController> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+
+  _AccountSection() {
+    // Initialize with current user's name if available
+    final user = AuthService.to.currentUser.value;
+    final fullName = user?.userMetadata?['full_name'] as String?;
+    final email = user?.email;
+    
+    if (fullName != null) {
+      _nameController.text = fullName;
+    }
+    if (email != null) {
+      _emailController.text = email;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        CommonContainer(
+          padding: const EdgeInsets.all(AppSizes.s16),
+          backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.04),
+          radius: AppSizes.containerRadius,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Full Name',
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSizes.s8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _nameController,
+                      style: TextStyle(color: Theme.of(context).primaryColor),
+                      decoration: InputDecoration(
+                        hintText: 'Enter your name',
+                        hintStyle: TextStyle(color: Theme.of(context).primaryColor.withValues(alpha: 0.4)),
+                        filled: true,
+                        fillColor: Theme.of(context).scaffoldBackgroundColor,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSizes.s12),
+                  GestureDetector(
+                    onTap: () {
+                      FocusScope.of(context).unfocus();
+                      controller.updateProfile(_nameController.text.trim());
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+                      ),
+                      child: Text(
+                        'Save',
+                        style: TextStyle(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSizes.s16),
+              Text(
+                'Email Address',
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSizes.s8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: TextStyle(color: Theme.of(context).primaryColor),
+                      decoration: InputDecoration(
+                        hintText: 'Enter new email',
+                        hintStyle: TextStyle(color: Theme.of(context).primaryColor.withValues(alpha: 0.4)),
+                        filled: true,
+                        fillColor: Theme.of(context).scaffoldBackgroundColor,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSizes.s12),
+                  GestureDetector(
+                    onTap: () {
+                      FocusScope.of(context).unfocus();
+                      controller.updateEmail(_emailController.text.trim());
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+                      ),
+                      child: Text(
+                        'Update',
+                        style: TextStyle(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => controller.logout(),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
+              borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+            ),
+            child: Text(
+              'Log Out',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).primaryColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

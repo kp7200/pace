@@ -8,11 +8,13 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/widgets/app_container.dart';
 import '../../../core/widgets/web_shell.dart';
+import '../../history/views/history_view.dart';
 import '../controllers/home_controller.dart';
 import '../../weekly/views/weekly_view.dart';
-import '../../history/views/history_view.dart';
 import '../../settings/views/settings_view.dart';
 import '../../../data/models/note.dart';
+import '../../../core/services/sync_service.dart';
+import '../controllers/notes_controller.dart';
 
 class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
@@ -32,7 +34,11 @@ class HomeView extends GetView<HomeController> {
             SliverToBoxAdapter(child: _Header(ctrl: ctrl)),
             SliverToBoxAdapter(child: _TimerHero(ctrl: ctrl)),
             SliverToBoxAdapter(child: _StatsRow(ctrl: ctrl)),
-            SliverToBoxAdapter(child: _NotesSection(ctrl: ctrl)),
+            SliverToBoxAdapter(
+              child: Obx(() => ctrl.isCheckedIn.value 
+                  ? const _NotesSection() 
+                  : const SizedBox.shrink()),
+            ),
             SliverToBoxAdapter(
               child: SizedBox(height: webDesktop ? 100 : 150),
             ),
@@ -50,7 +56,7 @@ class HomeView extends GetView<HomeController> {
 
     // ── Note input bar ───────────────────────────────────────────────────
     final noteInputBar = Obx(() => ctrl.currentTabIndex.value == 0
-        ? _NoteInputBar(ctrl: ctrl)
+        ? const _NoteInputBar()
         : const SizedBox.shrink());
 
     // ── Web desktop: WebShell handles layout ─────────────────────────────
@@ -111,7 +117,8 @@ class HomeView extends GetView<HomeController> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    noteInputBar,
+                   // Note Input Bar
+                const _NoteInputBar(),
                     _BottomNav(ctrl: ctrl),
                   ],
                 ),
@@ -174,6 +181,7 @@ class _Header extends StatelessWidget {
                       ),
                     );
                   }),
+                  _CloudIndicator(),
                 ],
               ),
               const SizedBox(height: 2),
@@ -194,6 +202,154 @@ class _Header extends StatelessWidget {
         ],
       ),
     ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.15, end: 0, duration: 400.ms);
+  }
+}
+
+class _CloudIndicator extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (!Get.isRegistered<SyncService>()) return const SizedBox.shrink();
+    
+    return Obx(() {
+      final isEnabled = SyncService.to.isCloudSyncEnabled.value;
+      if (!isEnabled) return const SizedBox.shrink();
+
+      final status = SyncService.to.status.value;
+      IconData icon;
+      Color color = const Color(0xFF888888);
+      
+      switch (status) {
+        case SyncStatus.online:
+          icon = Icons.cloud_done_rounded;
+          color = const Color(0xFF4ADE80);
+          break;
+        case SyncStatus.syncing:
+          icon = Icons.cloud_sync_rounded;
+          color = const Color(0xFFF9A826);
+          break;
+        case SyncStatus.offline:
+          icon = Icons.cloud_off_rounded;
+          break;
+        case SyncStatus.error:
+          icon = Icons.error_outline_rounded;
+          color = AppColors.signalOrange;
+          break;
+      }
+
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showSyncBottomSheet(context),
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            Container(
+              width: 4,
+              height: 4,
+              decoration: const BoxDecoration(
+                color: Color(0xFFC0C0C0),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (status == SyncStatus.syncing)
+              Icon(icon, color: color, size: 14)
+                  .animate(onPlay: (c) => c.repeat())
+                  .rotate(duration: const Duration(seconds: 2))
+            else
+              Icon(icon, color: color, size: 14),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _showSyncBottomSheet(BuildContext context) {
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
+    final fgColor = Theme.of(context).primaryColor;
+
+    Get.bottomSheet(
+      Container(
+        padding: const EdgeInsets.all(AppSizes.s24),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSizes.containerRadius)),
+        ),
+        child: Obx(() {
+          final status = SyncService.to.status.value;
+          final lastSynced = SyncService.to.lastSyncedDisplay;
+          
+          String title = 'Cloud Sync';
+          String desc = '';
+          IconData headerIcon = Icons.cloud_done_rounded;
+          Color headerColor = const Color(0xFF4ADE80);
+          
+          if (status == SyncStatus.syncing) {
+            title = 'Syncing...';
+            desc = 'Backing up your data to the cloud securely.';
+            headerIcon = Icons.cloud_sync_rounded;
+            headerColor = const Color(0xFFF9A826);
+          } else if (status == SyncStatus.offline) {
+            title = 'Offline Mode';
+            desc = 'Changes are saved locally and will sync when online.';
+            headerIcon = Icons.cloud_off_rounded;
+            headerColor = const Color(0xFF888888);
+          } else if (status == SyncStatus.error) {
+            title = 'Sync Error';
+            desc = 'Could not sync. We will try again later.';
+            headerIcon = Icons.error_outline_rounded;
+            headerColor = AppColors.signalOrange;
+          } else {
+            desc = 'Your data is securely backed up.';
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: fgColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 24),
+              Icon(headerIcon, color: headerColor, size: 48),
+              const SizedBox(height: 16),
+              Text(title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: fgColor)),
+              const SizedBox(height: 8),
+              Text(desc, textAlign: TextAlign.center, style: TextStyle(color: fgColor.withValues(alpha: 0.5))),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: fgColor.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Last Synced', style: TextStyle(color: fgColor.withValues(alpha: 0.5), fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text(lastSynced, style: TextStyle(color: fgColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: status == SyncStatus.syncing ? null : () {
+                    Get.back();
+                    SyncService.to.syncNow();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: fgColor,
+                    foregroundColor: bgColor,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.buttonRadius)),
+                  ),
+                  child: Text(status == SyncStatus.syncing ? 'Syncing...' : 'Sync Now', style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          );
+        }),
+      ),
+    );
   }
 }
 
@@ -593,11 +749,11 @@ class _StatDivider extends StatelessWidget {
 
 // ─── Notes Section ────────────────────────────────────────────────────────────
 class _NotesSection extends StatelessWidget {
-  final HomeController ctrl;
-  const _NotesSection({required this.ctrl});
+  const _NotesSection({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final ctrl = NotesController.to;
     return Padding(
       key: ctrl.notesSectionKey,
       padding: const EdgeInsets.fromLTRB(
@@ -635,7 +791,7 @@ class _NotesSection extends StatelessWidget {
               children: ctrl.notes
                   .asMap()
                   .entries
-                  .map((e) => _NoteCard(note: e.value, ctrl: ctrl, index: e.key))
+                  .map((e) => _NoteCard(note: e.value, index: e.key))
                   .toList(),
             );
           }),
@@ -686,9 +842,8 @@ class _EmptyNotesState extends StatelessWidget {
 
 class _NoteCard extends StatelessWidget {
   final Note note;
-  final HomeController ctrl;
   final int index;
-  const _NoteCard({required this.note, required this.ctrl, required this.index});
+  const _NoteCard({super.key, required this.note, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -714,7 +869,7 @@ class _NoteCard extends StatelessWidget {
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => ctrl.deleteNote(note.id),
+                  onTap: () => NotesController.to.deleteNote(note.id),
                   child: Icon(
                     Icons.close_rounded,
                     size: 16,
@@ -746,14 +901,15 @@ class _NoteCard extends StatelessWidget {
 // ─── Note Input Bar ───────────────────────────────────────────────────────────
 // Pinned inside the Column (not bottomSheet) — fixes the GetX reactive context issue
 class _NoteInputBar extends StatelessWidget {
-  final HomeController ctrl;
-  const _NoteInputBar({required this.ctrl});
+  const _NoteInputBar({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final homeCtrl = Get.find<HomeController>();
     return Obx(() {
-      if (!ctrl.isCheckedIn.value) return const SizedBox.shrink();
+      if (!homeCtrl.isCheckedIn.value) return const SizedBox.shrink();
       
+      final ctrl = NotesController.to;
       final isFocused = ctrl.isNoteFocused.value;
       final hasText = ctrl.isNoteNotEmpty.value;
 

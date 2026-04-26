@@ -44,6 +44,8 @@ dependencies:
   superellipse_shape: ^0.2.0
   flutter_animate: ^4.5.2
   lottie: ^3.3.3
+  supabase_flutter: ^2.12.4
+  connectivity_plus: ^6.1.1
 
 dev_dependencies:
   flutter_test:

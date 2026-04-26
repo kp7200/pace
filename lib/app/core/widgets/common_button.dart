@@ -8,6 +8,7 @@ class CommonButton extends StatelessWidget {
   final VoidCallback onPressed;
   final bool isLoading;
   final bool isSecondary;
+  final Widget? icon;
 
   const CommonButton({
     super.key,
@@ -15,6 +16,7 @@ class CommonButton extends StatelessWidget {
     required this.onPressed,
     this.isLoading = false,
     this.isSecondary = false,
+    this.icon,
   });
 
   @override
@@ -24,13 +26,13 @@ class CommonButton extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: isSecondary ? AppColors.transparent : AppColors.inkBlack,
-          foregroundColor: isSecondary ? AppColors.inkBlack : AppColors.canvasCream,
+          backgroundColor: isSecondary ? AppColors.transparent : Theme.of(context).primaryColor,
+          foregroundColor: isSecondary ? Theme.of(context).primaryColor : Theme.of(context).canvasColor,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
             side: isSecondary 
-                ? const BorderSide(color: AppColors.inkBlack, width: 1.5)
+                ? BorderSide(color: Theme.of(context).primaryColor, width: 1.5)
                 : BorderSide.none,
           ),
         ),
@@ -42,15 +44,24 @@ class CommonButton extends StatelessWidget {
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    isSecondary ? AppColors.inkBlack : AppColors.canvasCream,
+                    isSecondary ? Theme.of(context).primaryColor : Theme.of(context).canvasColor,
                   ),
                 ),
               )
-            : CommonText(
-                text,
-                color: isSecondary ? AppColors.inkBlack : AppColors.canvasCream,
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (icon != null) ...[
+                    icon!,
+                    const SizedBox(width: 8),
+                  ],
+                  CommonText(
+                    text,
+                    color: isSecondary ? Theme.of(context).primaryColor : Theme.of(context).canvasColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ],
               ),
       ),
     );

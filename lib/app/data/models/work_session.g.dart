@@ -29,13 +29,15 @@ class WorkSessionAdapter extends TypeAdapter<WorkSession> {
           : fields[5] as Duration,
       currentBreakStartTime: fields[6] as DateTime?,
       notes: fields[7] == null ? const [] : (fields[7] as List).cast<Note>(),
+      updatedAt: fields[8] as DateTime?,
+      isSynced: fields[9] == null ? false : fields[9] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, WorkSession obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
@@ -51,7 +53,11 @@ class WorkSessionAdapter extends TypeAdapter<WorkSession> {
       ..writeByte(6)
       ..write(obj.currentBreakStartTime)
       ..writeByte(7)
-      ..write(obj.notes);
+      ..write(obj.notes)
+      ..writeByte(8)
+      ..write(obj.updatedAt)
+      ..writeByte(9)
+      ..write(obj.isSynced);
   }
 
   @override
